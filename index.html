@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>UMAP Visualization</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center; /* Center the title and everything inside body */
+    }
+
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    #geneSelect {
+      margin-bottom: 20px;
+      padding: 6px 12px;
+      font-size: 16px;
+    }
+
+    #plots {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center; /* Center the plots horizontally */
+      gap: 20px;
+    }
+
+    .plot {
+      width: 600px;
+      height: 500px;
+    }
+  </style>
+</head>
+<body>
+  <h1>UMAP Visualization</h1>
+
+  <select id="geneSelect">
+    <option value="">Select gene for expression</option>
+  </select>
+
+  <div id="plots">
+    <div id="cellTypePlot" class="plot"></div>
+    <div id="genePlot" class="plot"></div>
+  </div>
+
+  <script>
+    const geneSelect = document.getElementById('geneSelect');
+    let data = [];
+
+    fetch('umap_data.csv')
+      .then(response => response.text())
+      .then(csvText => {
+        Papa.parse(csvText, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            data = results.data;
+            populateGeneDropdown();
+            plotCellType();
+          }
+        });
+      })
+      .catch(err => console.error("Error loading CSV:", err));
+
+    function populateGeneDropdown() {
+      const firstRow = data[0];
+      const genes = Object.keys(firstRow).filter(k => !['cell_id','umap_1','umap_2','cell_type'].includes(k));
+      genes.forEach(gene => {
+        const option = document.createElement('option');
+        option.value = gene;
+        option.textContent = gene;
+        geneSelect.appendChild(option);
+      });
+    }
+
+    function plotCellType() {
+      const cellTypes = [...new Set(data.map(d => d.cell_type))];
+      const rainbowColors = cellTypes.map((_, i) => `hsl(${(i / cellTypes.length) * 360}, 100%, 50%)`);
+
+      const traces = cellTypes.map((ct, i) => ({
+        x: data.filter(d => d.cell_type === ct).map(d => d.umap_1),
+        y: data.filter(d => d.cell_type === ct).map(d => d.umap_2),
+        mode: 'markers',
+        type: 'scatter',
+        name: ct,
+        marker: { size: 8, color: rainbowColors[i] },
+        text: data.filter(d => d.cell_type === ct).map(d => d.cell_type),
+        hoverinfo: 'text'
+      }));
+
+      Plotly.newPlot('cellTypePlot', traces, { title: 'UMAP by Cell Type' });
+    }
+
+    geneSelect.addEventListener('change', () => {
+      const gene = geneSelect.value;
+      if (!gene) return;
+
+      const values = data.map(d => d[gene]);
+      const minVal = Math.min(...values);
+      const maxVal = Math.max(...values);
+
+      const opacity = values.map(v => 0.2 + 0.8 * ((v - minVal) / (maxVal - minVal)));
+
+      const trace = {
+        x: data.map(d => d.umap_1),
+        y: data.map(d => d.umap_2),
+        mode: 'markers',
+        type: 'scatter',
+        marker: {
+          size: 8,
+          color: 'blue',
+          opacity: opacity
+        },
+        text: data.map(d => `${d.cell_type}<br>${gene}: ${d[gene]}`),
+        hoverinfo: 'text'
+      };
+
+      Plotly.newPlot('genePlot', [trace], { title: `UMAP colored by ${gene} expression (opacity)` });
+    });
+  </script>
+</body>
+</html>
